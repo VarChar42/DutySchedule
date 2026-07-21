@@ -145,7 +145,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "cd \"$SRCROOT/..\"\n./gradlew :shared:embedAndSignAppleFrameworkForXcode\n";
+			shellScript = "cd \"$SRCROOT/..\"\n(while true; do echo \"[heartbeat] still building at $(date -u +%H:%M:%S)\"; sleep 30; done) &\nHEARTBEAT_PID=$!\n./gradlew :shared:embedAndSignAppleFrameworkForXcode --info --console=plain\nGRADLE_EXIT=$?\nkill \"$HEARTBEAT_PID\" 2>/dev/null\nexit $GRADLE_EXIT\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
