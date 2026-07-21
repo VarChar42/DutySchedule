@@ -1,13 +1,6 @@
 default_platform(:ios)
 
 platform :ios do
-  desc "Build the Kotlin/Native shared framework via Gradle"
-  lane :build_shared_framework do
-    Dir.chdir("../..") do
-      sh("./gradlew :shared:embedAndSignAppleFrameworkForXcode")
-    end
-  end
-
   desc "Build and upload a new build to TestFlight"
   lane :beta do
     api_key = app_store_connect_api_key(
@@ -17,7 +10,12 @@ platform :ios do
       is_key_content_base64: true
     )
 
-    build_shared_framework
+    # The shared Kotlin framework is embedded via a Run Script build phase
+    # in the Xcode project (./gradlew :shared:embedAndSignAppleFrameworkForXcode),
+    # which Xcode invokes itself during build_app below with the right
+    # ARCHS/SDK_NAME env vars set. Don't invoke that Gradle task separately
+    # here — outside of an actual Xcode build it can't infer the target
+    # architecture and fails.
 
     match(type: "appstore", api_key: api_key, readonly: false)
 
