@@ -6,7 +6,7 @@ on:
 jobs:
   beta:
     runs-on: macos-15
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: iosApp
@@ -33,13 +33,14 @@ jobs:
         # explicitly, e.g.:
         #   sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
 
-      - name: Cache Gradle
+      - name: Cache Gradle and Kotlin/Native
         uses: actions/cache@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties') }}
+            ~/.konan
+          key: gradle-konan-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties') }}
 
       - name: Run fastlane beta lane
         env:
