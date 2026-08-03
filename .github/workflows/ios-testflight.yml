@@ -5,7 +5,7 @@ on:
 
 jobs:
   beta:
-    runs-on: macos-15-xlarge
+    runs-on: macos-15
     timeout-minutes: 60
     defaults:
       run:
