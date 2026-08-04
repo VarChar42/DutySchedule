@@ -18,11 +18,17 @@ env:
 
 jobs:
   beta:
-    runs-on: macos-15
-    # The Kotlin/Native release link is genuinely expensive on a 3-core
-    # runner; 60 total was tight enough that a slow link looked like a
-    # hang. Per-step timeouts below keep a real stall from burning it all.
-    timeout-minutes: 90
+    # xlarge: 6 cores / 14GB vs the standard runner's 3 / 7GB. The extra
+    # RAM is the point - the release-mode Kotlin/Native link OOM'd at 2GB
+    # of heap and thrashed at 4GB on a 7GB machine.
+    #
+    # This tier is BILLED (~$0.16/min), unlike the standard macOS runner.
+    # At a $5 spending limit that is only ~31 minutes of runtime in total,
+    # so the timeout below is deliberately tight: it caps a single run at
+    # roughly $4.80 rather than letting one stall consume the whole
+    # budget. Raise both together, or not at all.
+    runs-on: macos-15-xlarge
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: iosApp
@@ -154,10 +160,16 @@ jobs:
       # --no-daemon stops a 4GB daemon lingering into the Xcode build.
       # The archive's script phase then finds the task up to date and
       # only copies the framework.
+      # Heap is raised here rather than in gradle.properties so the repo's
+      # committed default stays sane for contributors on smaller machines.
+      # 8g of a 14GB runner leaves room for the compiler's native side.
       - name: Build shared Kotlin framework
-        timeout-minutes: 40
+        timeout-minutes: 18
         working-directory: .
-        run: ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-daemon --console=plain
+        run: |
+          ./gradlew :shared:linkReleaseFrameworkIosArm64 \
+            --no-daemon --console=plain \
+            -Dorg.gradle.jvmargs="-Xmx8g -XX:MaxMetaspaceSize=1g"
 
       # Manual signing pinned to match's identity. Automatic signing has no
       # stable identity to resolve to on a throwaway runner, and mixing the
@@ -168,7 +180,7 @@ jobs:
       # job still produces a build App Store Connect will accept - it
       # rejects a CFBundleVersion it has already seen.
       - name: Archive
-        timeout-minutes: 30
+        timeout-minutes: 10
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -189,7 +201,7 @@ jobs:
       # itself (destination=upload), not just provisioning lookups - drop
       # them and the upload has no credentials.
       - name: Export and upload to TestFlight
-        timeout-minutes: 30
+        timeout-minutes: 10
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
