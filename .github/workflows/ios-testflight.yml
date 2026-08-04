@@ -62,14 +62,15 @@ jobs:
       # match fetches (or creates once, then stores encrypted in the
       # MATCH_GIT_URL repo) a single real cert+profile pair every run.
       #
-      # MATCH_KEYCHAIN_NAME/PASSWORD tell match to create and use its own
-      # dedicated keychain instead of the default login.keychain, whose
-      # password CI doesn't know. Without a keychain password match can
-      # unlock, it can't set the key's access-control partition list, so
-      # the cert gets written but xcodebuild can't see its private key
-      # ("No signing certificate ... with a private key was found"). The
-      # keychain is destroyed with the VM at the end of the job, so this
-      # password doesn't need to be a secret.
+      # MATCH_KEYCHAIN_NAME/PASSWORD tell match which keychain to use, but
+      # don't create it - that file has to exist first (this is what
+      # setup_ci does under the hood), or match can't find it to install
+      # into. Without a keychain match can unlock, it can't set the key's
+      # access-control partition list, so the cert gets written but
+      # xcodebuild can't see its private key ("No signing certificate ...
+      # with a private key was found"). The keychain is destroyed with the
+      # VM at the end of the job, so this password doesn't need to be a
+      # secret.
       - name: Fetch signing certificate via match
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
@@ -80,6 +81,12 @@ jobs:
           MATCH_KEYCHAIN_NAME: ci-build.keychain
           MATCH_KEYCHAIN_PASSWORD: ci-build-keychain-password
         run: |
+          security create-keychain -p "$MATCH_KEYCHAIN_PASSWORD" "$MATCH_KEYCHAIN_NAME"
+          security set-keychain-settings -lut 21600 "$MATCH_KEYCHAIN_NAME"
+          security unlock-keychain -p "$MATCH_KEYCHAIN_PASSWORD" "$MATCH_KEYCHAIN_NAME"
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/[" ]//g')
+          security list-keychains -d user -s "$MATCH_KEYCHAIN_NAME" $EXISTING_KEYCHAINS
+
           API_KEY_JSON_PATH="$RUNNER_TEMP/asc_api_key.json" AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" ruby -rjson -e '
             File.write(
               ENV["API_KEY_JSON_PATH"],
