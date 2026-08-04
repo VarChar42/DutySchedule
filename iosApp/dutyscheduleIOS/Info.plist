@@ -4,5 +4,28 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!--
+		The app requests only the notification permission (see Onboarding.kt).
+		It never asks for contacts, location or Bluetooth, so these strings
+		are never shown to a user.
+
+		They are required anyway: the calf-permissions library covers every
+		permission type, so its iOS implementation references CNContactStore,
+		CLLocationManager and CBCentralManager. Kotlin/Native links those
+		symbols into sharedKit.framework, App Store Connect's static scan
+		sees them, and rejects the build with ITMS-90683 unless a purpose
+		string is present (contacts is a hard failure, the other two are
+		warnings).
+
+		Kept truthful rather than inventing a purpose. If calf-permissions is
+		ever dropped or replaced with a notification-only wrapper, these can
+		go with it.
+	-->
+	<key>NSContactsUsageDescription</key>
+	<string>DutySchedule does not access your contacts.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>DutySchedule does not access your location.</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>DutySchedule does not use Bluetooth.</string>
 </dict>
 </plist>
