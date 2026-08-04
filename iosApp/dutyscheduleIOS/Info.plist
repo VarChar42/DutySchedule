@@ -5,6 +5,19 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<!--
+		Opts the app into the device's native screen size. Without a launch
+		screen iOS assumes the app predates modern displays and letterboxes
+		it: content renders at a legacy aspect ratio with black bars top and
+		bottom, not reaching the rounded corners.
+
+		The target sets INFOPLIST_KEY_UILaunchScreen_Generation = YES, but
+		that wasn't reaching the built plist, so the key is declared here
+		directly. An empty dict is the documented minimum - a plain launch
+		screen using the system background colour.
+	-->
+	<key>UILaunchScreen</key>
+	<dict/>
+	<!--
 		Home screen name. Without these it falls back to PRODUCT_NAME,
 		which is $(TARGET_NAME) - so the app showed up as
 		"dutyscheduleIOS". Matches the Android app's app_name string.
