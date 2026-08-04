@@ -19,7 +19,10 @@ env:
 jobs:
   beta:
     runs-on: macos-15
-    timeout-minutes: 60
+    # The Kotlin/Native release link is genuinely expensive on a 3-core
+    # runner; 60 total was tight enough that a slow link looked like a
+    # hang. Per-step timeouts below keep a real stall from burning it all.
+    timeout-minutes: 90
     defaults:
       run:
         working-directory: iosApp
@@ -136,6 +139,26 @@ jobs:
           '
           bundle exec fastlane match appstore --readonly true --api_key_path "$RUNNER_TEMP/asc_api_key.json"
 
+      # Build the Kotlin/Native framework in its own step rather than
+      # leaving it to Xcode's embed-and-sign Run Script phase.
+      #
+      # Xcode buffers script-phase stdout until the phase ends, so a link
+      # that takes tens of minutes prints nothing the entire time - and
+      # prints nothing at all if the job is cancelled first, which is why
+      # the 60-minute timeout produced a log that just stopped dead.
+      # Running it here streams Gradle's output live and gives a real
+      # timing number for the expensive part of the build.
+      #
+      # It should also be faster: Gradle gets the machine to itself
+      # instead of contending with Xcode for the runner's 7GB, and
+      # --no-daemon stops a 4GB daemon lingering into the Xcode build.
+      # The archive's script phase then finds the task up to date and
+      # only copies the framework.
+      - name: Build shared Kotlin framework
+        timeout-minutes: 40
+        working-directory: .
+        run: ./gradlew :shared:linkReleaseFrameworkIosArm64 --no-daemon --console=plain
+
       # Manual signing pinned to match's identity. Automatic signing has no
       # stable identity to resolve to on a throwaway runner, and mixing the
       # two ("automatically signed for development, but a conflicting code
@@ -145,7 +168,7 @@ jobs:
       # job still produces a build App Store Connect will accept - it
       # rejects a CFBundleVersion it has already seen.
       - name: Archive
-        timeout-minutes: 40
+        timeout-minutes: 30
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
