@@ -61,15 +61,15 @@ jobs:
       # with the VM) or, worse, drifts between Development/Distribution.
       # match fetches (or creates once, then stores encrypted in the
       # MATCH_GIT_URL repo) a single real cert+profile pair every run.
-      # setup_ci creates a fresh, unlocked, non-UI keychain and adds it to
-      # the search list. Without it, importing the cert and later codesign
-      # invocations (e.g. the shared framework's embed-and-sign build phase)
-      # can trigger a "codesign wants to access your keychain" GUI prompt
-      # that nothing can answer in headless CI, hanging the job silently
-      # until it hits the workflow timeout.
-      - name: Set up CI keychain
-        run: bundle exec fastlane run setup_ci
-
+      #
+      # MATCH_KEYCHAIN_NAME/PASSWORD tell match to create and use its own
+      # dedicated keychain instead of the default login.keychain, whose
+      # password CI doesn't know. Without a keychain password match can
+      # unlock, it can't set the key's access-control partition list, so
+      # the cert gets written but xcodebuild can't see its private key
+      # ("No signing certificate ... with a private key was found"). The
+      # keychain is destroyed with the VM at the end of the job, so this
+      # password doesn't need to be a secret.
       - name: Fetch signing certificate via match
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
@@ -77,6 +77,8 @@ jobs:
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          MATCH_KEYCHAIN_NAME: ci-build.keychain
+          MATCH_KEYCHAIN_PASSWORD: ci-build-keychain-password
         run: |
           API_KEY_JSON_PATH="$RUNNER_TEMP/asc_api_key.json" AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" ruby -rjson -e '
             File.write(
