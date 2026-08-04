@@ -5,6 +5,23 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<!--
+		Export compliance. Answers App Store Connect's encryption question
+		up front so it stops blocking every TestFlight upload.
+
+		false is the accurate answer here: on iOS the app only uses
+		encryption Apple already provides - the Keychain for credentials
+		(PlatformSecureStorageApi.ios.kt) and TLS via NSURLSession, which is
+		what ktor-client-darwin runs on. It ships no crypto library and
+		implements no algorithm of its own. The AES-GCM code in
+		PlatformSecureStorageApi.android.kt is androidMain only and is not
+		part of this binary.
+
+		Revisit this if the app ever encrypts data itself rather than
+		handing it to the OS.
+	-->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!--
 		The app requests only the notification permission (see Onboarding.kt).
 		It never asks for contacts, location or Bluetooth, so these strings
 		are never shown to a user.
