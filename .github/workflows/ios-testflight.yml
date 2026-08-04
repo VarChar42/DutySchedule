@@ -3,6 +3,19 @@ name: iOS TestFlight
 on:
   workflow_dispatch: {}
 
+# Serialize runs: two concurrent uploads would race for the same build
+# number and one would be rejected by App Store Connect as a duplicate.
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+# Only static values here: the `runner` context (RUNNER_TEMP) isn't
+# available to workflow- or job-level env, so paths derived from it are
+# built inside the run blocks from $RUNNER_TEMP instead.
+env:
+  APP_IDENTIFIER: me.emiliomini.dutyscheduleIOS
+  PROFILE_NAME: match AppStore me.emiliomini.dutyscheduleIOS
+
 jobs:
   beta:
     runs-on: macos-15
@@ -42,36 +55,51 @@ jobs:
             ~/.konan
           key: gradle-konan-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties') }}
 
+      # Keyed on project.pbxproj rather than the whole .xcodeproj: that
+      # bundle also holds xcuserdata, which churns without affecting the
+      # build and would needlessly invalidate the cache.
       - name: Cache Xcode DerivedData
         uses: actions/cache@v4
         with:
           path: iosApp/DerivedData
-          key: xcode-deriveddata-${{ runner.os }}-${{ hashFiles('iosApp/dutyscheduleIOS.xcodeproj/**', 'iosApp/dutyscheduleIOS/**/*.swift') }}
+          key: xcode-deriveddata-${{ runner.os }}-${{ hashFiles('iosApp/dutyscheduleIOS.xcodeproj/project.pbxproj', 'iosApp/dutyscheduleIOS/**') }}
           restore-keys: |
             xcode-deriveddata-${{ runner.os }}-
 
       - name: Write App Store Connect API key
         env:
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
-        run: echo "$ASC_KEY_CONTENT" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+        run: |
+          echo "$ASC_KEY_CONTENT" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          # Fail loudly here rather than with an opaque auth error later.
+          if ! grep -q "BEGIN PRIVATE KEY" "$RUNNER_TEMP/AuthKey.p8"; then
+            echo "::error::ASC_KEY_CONTENT did not decode to a valid .p8 private key."
+            echo "It must be the base64 encoding of the whole AuthKey_*.p8 file."
+            exit 1
+          fi
 
       # match owns the persistent signing identity: GitHub-hosted runners
       # are ephemeral, so plain -allowProvisioningUpdates has no keychain
-      # to reuse and either mints a throwaway cert each run (whose key dies
-      # with the VM) or, worse, drifts between Development/Distribution.
-      # match fetches (or creates once, then stores encrypted in the
-      # MATCH_GIT_URL repo) a single real cert+profile pair every run.
+      # to reuse and either mints a throwaway cert each run (whose private
+      # key dies with the VM) or drifts between Development/Distribution.
+      # match installs the one real cert+profile pair held encrypted in the
+      # MATCH_GIT_URL repo.
       #
-      # MATCH_KEYCHAIN_NAME/PASSWORD tell match which keychain to use, but
-      # don't create it - that file has to exist first (this is what
-      # setup_ci does under the hood), or match can't find it to install
-      # into. Without a keychain match can unlock, it can't set the key's
-      # access-control partition list, so the cert gets written but
-      # xcodebuild can't see its private key ("No signing certificate ...
-      # with a private key was found"). The keychain is destroyed with the
-      # VM at the end of the job, so this password doesn't need to be a
-      # secret.
-      - name: Fetch signing certificate via match
+      # --readonly: never create or renew certificates from CI. Earlier runs
+      # left three stray auto-created Development certs on the account, and
+      # the distribution cert limit is low enough that silent creation can
+      # wedge the whole team. If this step starts failing because the cert
+      # or profile expired, regenerate it deliberately (locally, or by
+      # temporarily flipping this flag) rather than letting CI do it.
+      #
+      # The keychain must exist before match can install into it - match
+      # only takes its name/password, it won't create the file. Without a
+      # keychain whose password match knows, it can't set the key's
+      # access-control partition list, so the cert lands but xcodebuild
+      # can't see its private key ("No signing certificate ... with a
+      # private key was found"). The keychain dies with the VM, so this
+      # password needn't be secret.
+      - name: Install signing certificate via match
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
@@ -82,25 +110,42 @@ jobs:
           MATCH_KEYCHAIN_PASSWORD: ci-build-keychain-password
         run: |
           security create-keychain -p "$MATCH_KEYCHAIN_PASSWORD" "$MATCH_KEYCHAIN_NAME"
+          # -lut 21600: don't auto-lock mid-build (default is 5 min idle).
           security set-keychain-settings -lut 21600 "$MATCH_KEYCHAIN_NAME"
           security unlock-keychain -p "$MATCH_KEYCHAIN_PASSWORD" "$MATCH_KEYCHAIN_NAME"
+          # Prepend to the search list, keeping the existing keychains so
+          # the system roots stay resolvable. Unquoted on purpose: the
+          # existing entries must word-split into separate arguments.
           EXISTING_KEYCHAINS=$(security list-keychains -d user | sed 's/[" ]//g')
           security list-keychains -d user -s "$MATCH_KEYCHAIN_NAME" $EXISTING_KEYCHAINS
 
-          API_KEY_JSON_PATH="$RUNNER_TEMP/asc_api_key.json" AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" ruby -rjson -e '
+          # Built with Ruby, not a heredoc: the PEM has real newlines,
+          # which a JSON string literal can't carry unescaped.
+          ASC_KEY_JSON_PATH="$RUNNER_TEMP/asc_api_key.json" \
+          ASC_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" \
+          ruby -rjson -e '
             File.write(
-              ENV["API_KEY_JSON_PATH"],
+              ENV["ASC_KEY_JSON_PATH"],
               JSON.generate({
                 "key_id" => ENV["ASC_KEY_ID"],
                 "issuer_id" => ENV["ASC_ISSUER_ID"],
-                "key" => File.read(ENV["AUTH_KEY_PATH"]),
+                "key" => File.read(ENV["ASC_KEY_PATH"]),
                 "in_house" => false
               })
             )
           '
-          bundle exec fastlane match appstore --readonly false --api_key_path "$RUNNER_TEMP/asc_api_key.json"
+          bundle exec fastlane match appstore --readonly true --api_key_path "$RUNNER_TEMP/asc_api_key.json"
 
+      # Manual signing pinned to match's identity. Automatic signing has no
+      # stable identity to resolve to on a throwaway runner, and mixing the
+      # two ("automatically signed for development, but a conflicting code
+      # signing identity ... manually specified") is a hard error.
+      #
+      # Build number is run_number.run_attempt so that re-running a failed
+      # job still produces a build App Store Connect will accept - it
+      # rejects a CFBundleVersion it has already seen.
       - name: Archive
+        timeout-minutes: 40
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -114,12 +159,18 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE="Manual" \
             CODE_SIGN_IDENTITY="Apple Distribution" \
-            PROVISIONING_PROFILE_SPECIFIER="match AppStore me.emiliomini.dutyscheduleIOS" \
-            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER"
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            CURRENT_PROJECT_VERSION="${GITHUB_RUN_NUMBER}.${GITHUB_RUN_ATTEMPT}"
 
+      # The -authenticationKey* flags are what authenticate the upload
+      # itself (destination=upload), not just provisioning lookups - drop
+      # them and the upload has no credentials.
       - name: Export and upload to TestFlight
+        timeout-minutes: 30
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -134,8 +185,8 @@ jobs:
               <string>manual</string>
               <key>provisioningProfiles</key>
               <dict>
-                  <key>me.emiliomini.dutyscheduleIOS</key>
-                  <string>match AppStore me.emiliomini.dutyscheduleIOS</string>
+                  <key>$APP_IDENTIFIER</key>
+                  <string>$PROFILE_NAME</string>
               </dict>
               <key>destination</key>
               <string>upload</string>
@@ -146,4 +197,7 @@ jobs:
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/dutyscheduleIOS.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/export"
+            -exportPath "$RUNNER_TEMP/export" \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"

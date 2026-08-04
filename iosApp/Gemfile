@@ -1,3 +1,6 @@
 source "https://rubygems.org"
 
-gem "fastlane"
+# Pinned to a minor range: CI resolves this on every run (no Gemfile.lock
+# is committed), and an unbounded constraint means a fastlane major could
+# land mid-release and break signing without any change on our side.
+gem "fastlane", "~> 2.237"
