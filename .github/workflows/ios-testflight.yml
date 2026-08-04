@@ -61,6 +61,15 @@ jobs:
       # with the VM) or, worse, drifts between Development/Distribution.
       # match fetches (or creates once, then stores encrypted in the
       # MATCH_GIT_URL repo) a single real cert+profile pair every run.
+      # setup_ci creates a fresh, unlocked, non-UI keychain and adds it to
+      # the search list. Without it, importing the cert and later codesign
+      # invocations (e.g. the shared framework's embed-and-sign build phase)
+      # can trigger a "codesign wants to access your keychain" GUI prompt
+      # that nothing can answer in headless CI, hanging the job silently
+      # until it hits the workflow timeout.
+      - name: Set up CI keychain
+        run: bundle exec fastlane run setup_ci
+
       - name: Fetch signing certificate via match
         env:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
