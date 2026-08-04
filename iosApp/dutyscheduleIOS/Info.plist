@@ -5,6 +5,15 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<!--
+		Home screen name. Without these it falls back to PRODUCT_NAME,
+		which is $(TARGET_NAME) - so the app showed up as
+		"dutyscheduleIOS". Matches the Android app's app_name string.
+	-->
+	<key>CFBundleDisplayName</key>
+	<string>Duty Schedule</string>
+	<key>CFBundleName</key>
+	<string>Duty Schedule</string>
+	<!--
 		Export compliance. Answers App Store Connect's encryption question
 		up front so it stops blocking every TestFlight upload.
 
