@@ -66,15 +66,20 @@ jobs:
           MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
           MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
           MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
-          cat > "$RUNNER_TEMP/asc_api_key.json" <<JSON
-          {
-            "key_id": "${{ secrets.ASC_KEY_ID }}",
-            "issuer_id": "${{ secrets.ASC_ISSUER_ID }}",
-            "key_filepath": "$RUNNER_TEMP/AuthKey.p8",
-            "in_house": false
-          }
-          JSON
+          API_KEY_JSON_PATH="$RUNNER_TEMP/asc_api_key.json" AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey.p8" ruby -rjson -e '
+            File.write(
+              ENV["API_KEY_JSON_PATH"],
+              JSON.generate({
+                "key_id" => ENV["ASC_KEY_ID"],
+                "issuer_id" => ENV["ASC_ISSUER_ID"],
+                "key" => File.read(ENV["AUTH_KEY_PATH"]),
+                "in_house" => false
+              })
+            )
+          '
           bundle exec fastlane match appstore --readonly false --api_key_path "$RUNNER_TEMP/asc_api_key.json"
 
       - name: Archive
