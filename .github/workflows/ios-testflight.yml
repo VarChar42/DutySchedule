@@ -35,14 +35,6 @@ jobs:
             ~/.konan
           key: gradle-konan-${{ runner.os }}-${{ hashFiles('**/*.gradle*', 'gradle/wrapper/gradle-wrapper.properties') }}
 
-      - name: Cache Xcode DerivedData
-        uses: actions/cache@v4
-        with:
-          path: iosApp/DerivedData
-          key: xcode-deriveddata-${{ runner.os }}-${{ hashFiles('iosApp/dutyscheduleIOS.xcodeproj/**', 'iosApp/dutyscheduleIOS/**/*.swift') }}
-          restore-keys: |
-            xcode-deriveddata-${{ runner.os }}-
-
       - name: Write App Store Connect API key
         env:
           ASC_KEY_CONTENT: ${{ secrets.ASC_KEY_CONTENT }}
@@ -64,7 +56,6 @@ jobs:
             -configuration Release \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/dutyscheduleIOS.xcarchive" \
-            -derivedDataPath DerivedData \
             -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "$ASC_KEY_ID" \
