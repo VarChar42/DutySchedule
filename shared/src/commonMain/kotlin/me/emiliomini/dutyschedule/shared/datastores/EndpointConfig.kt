@@ -17,8 +17,8 @@ data class EndpointConfig(
     val docscedUrl: String = DEFAULT_DOCSCED_URL
 ) : MultiplatformDataModel {
     companion object {
-        const val DEFAULT_PREP_URL = "https://dienstplan.o.roteskreuz.at"
-        const val DEFAULT_DOCSCED_URL = "https://docsced.app"
+        const val DEFAULT_PREP_URL = "https://prep-demo.mwq.at"
+        const val DEFAULT_DOCSCED_URL = "https://prep-demo.mwq.at"
     }
 }
 
